@@ -20,6 +20,8 @@ class ReliabilityMonitorTests(unittest.TestCase):
         self.assertEqual(snapshot["tool_calls"], 1)
         self.assertEqual(snapshot["tool_blocks"], 1)
         self.assertEqual(snapshot["max_input_tokens"], 123)
+        self.assertEqual(snapshot["average_api_latency_ms"], 25.0)
+        self.assertEqual(snapshot["average_tool_latency_ms"], 10.0)
         self.assertEqual(snapshot["response_anomalies"]["repeated_lines"], 1)
         self.assertFalse(snapshot["content_capture"])
         self.assertNotIn("prompt", snapshot)
