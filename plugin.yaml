@@ -1,0 +1,33 @@
+name: reliability-engine
+version: "0.1.0"
+description: Structural tool-call safeguards and privacy-conscious monitoring for Hermes Agent.
+requires_hermes: ">=0.23.1"
+provides_hooks:
+  - pre_tool_call
+  - post_tool_call
+  - pre_api_request
+  - post_api_request
+  - api_request_error
+  - pre_auxiliary_call
+  - post_auxiliary_call
+  - post_llm_call
+  - on_session_end
+config_schema:
+  max_tool_args_bytes:
+    type: integer
+    default: 32768
+  max_tool_depth:
+    type: integer
+    default: 12
+  max_tool_items:
+    type: integer
+    default: 512
+  max_tool_string_chars:
+    type: integer
+    default: 16384
+  max_invalid_tool_calls:
+    type: integer
+    default: 3
+  max_response_chars:
+    type: integer
+    default: 100000
