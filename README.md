@@ -27,9 +27,45 @@ The native plugin targets Hermes Agent **v0.23.1 or newer** and uses its documen
 
 It does not replace Hermes' memory provider, context engine, model provider, retry/failover logic, or tool schemas. It makes no auxiliary LLM calls and has no third-party Python runtime dependencies.
 
+## First-release behavior
+
+- Structural tool arguments are checked before execution. Invalid or over-limit calls are blocked with a short correction message.
+- After repeated consecutive malformed calls in one session, further malformed calls are blocked until a valid call or turn/session completion clears the guard.
+- Final responses are inspected for mechanical anomalies only; they are never silently rewritten.
+- Main and auxiliary provider requests are counted. Latencies for provider calls and tool-call events are measured separately.
+- A short system-prompt section nudges the model to avoid guessing and to wait for tool confirmation before claiming an action succeeded.
+- `/reliability` reports aggregate process-local metrics.
+
 ## Privacy
 
 The initial monitor stores aggregate counters only. It does **not** retain prompts, conversation history, assistant responses, tool arguments, tool results, API request bodies, or raw exception messages. Metrics are process-local and reset when the plugin process restarts.
+
+## Install as a Hermes plugin
+
+The plugin is opt-in. After reviewing the branch, install it into the intended Hermes profile:
+
+```bash
+hermes plugins install oORaxaOo/Reliability-Engine
+hermes plugins enable reliability-engine
+hermes plugins doctor reliability-engine
+```
+
+Merge optional settings into the existing `~/.hermes/config.yaml`:
+
+```yaml
+plugins:
+  entries:
+    reliability-engine:
+      settings:
+        max_tool_args_bytes: 32768
+        max_tool_depth: 12
+        max_tool_items: 512
+        max_tool_string_chars: 16384
+        max_invalid_tool_calls: 3
+        max_response_chars: 100000
+```
+
+Do not replace the rest of your Hermes configuration. The plugin requires Hermes Agent v0.23.1 or newer.
 
 ## Local tests
 
