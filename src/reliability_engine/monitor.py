@@ -21,7 +21,8 @@ class ReliabilityMonitor:
         self._response_anomalies: Counter[str] = Counter()
         self._error_types: Counter[str] = Counter()
         self._tool_names: Counter[str] = Counter()
-        self._latencies: deque[float] = deque(maxlen=sample_limit)
+        self._api_latencies: deque[float] = deque(maxlen=sample_limit)
+        self._tool_latencies: deque[float] = deque(maxlen=sample_limit)
         self._input_token_estimates: deque[int] = deque(maxlen=sample_limit)
         self._max_input_tokens = 0
 
@@ -44,7 +45,7 @@ class ReliabilityMonitor:
                 and not isinstance(duration_ms, bool)
                 and duration_ms >= 0
             ):
-                self._latencies.append(float(duration_ms))
+                self._api_latencies.append(float(duration_ms))
 
     def api_request_failed(self, *, error_type: Any = None) -> None:
         name = str(error_type or "unknown")[:80]
@@ -62,7 +63,7 @@ class ReliabilityMonitor:
                 and not isinstance(duration_ms, bool)
                 and duration_ms >= 0
             ):
-                self._latencies.append(float(duration_ms))
+                self._tool_latencies.append(float(duration_ms))
 
     def tool_call_blocked(self) -> None:
         with self._lock:
@@ -74,7 +75,8 @@ class ReliabilityMonitor:
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            latencies = list(self._latencies)
+            api_latencies = list(self._api_latencies)
+            tool_latencies = list(self._tool_latencies)
             token_samples = list(self._input_token_estimates)
             return {
                 "uptime_seconds": round(time.monotonic() - self._started, 1),
@@ -86,7 +88,8 @@ class ReliabilityMonitor:
                 "response_anomalies": dict(self._response_anomalies),
                 "api_error_types": dict(self._error_types),
                 "tool_calls_by_name": dict(self._tool_names),
-                "average_latency_ms": round(fmean(latencies), 1) if latencies else None,
+                "average_api_latency_ms": round(fmean(api_latencies), 1) if api_latencies else None,
+                "average_tool_latency_ms": round(fmean(tool_latencies), 1) if tool_latencies else None,
                 "average_input_tokens": round(fmean(token_samples), 1) if token_samples else None,
                 "max_input_tokens": self._max_input_tokens,
                 "metrics_retention": "in-memory; reset when the plugin process restarts",
