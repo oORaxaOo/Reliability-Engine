@@ -42,7 +42,7 @@ The initial monitor stores aggregate counters only. It does **not** retain promp
 
 ## Install as a Hermes plugin
 
-The plugin is opt-in. After reviewing the branch, install it into the intended Hermes profile:
+The implementation is currently under review on the `feat/reliability-engine-v0.1` branch. Do not install it into a live Hermes profile until the branch has been reviewed and merged into the default branch (or a reviewed release is published). After that, the plugin is opt-in; install it into the intended Hermes profile:
 
 ```bash
 hermes plugins install oORaxaOo/Reliability-Engine
