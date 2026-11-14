@@ -87,8 +87,9 @@ def _format_status(snapshot: dict[str, Any]) -> str:
             "RELIABILITY ENGINE STATUS",
             f"Uptime: {snapshot['uptime_seconds']} seconds",
             f"LLM requests: {snapshot['api_requests']} (success: {snapshot['api_successes']}, errors: {snapshot['api_errors']})",
-            f"Tool calls: {snapshot['tool_calls']} (blocked by structural guard: {snapshot['tool_blocks']})",
-            f"Average observed latency: {snapshot['average_latency_ms'] if snapshot['average_latency_ms'] is not None else 'n/a'} ms",
+            f"Tool-call events: {snapshot['tool_calls']} (blocked by structural guard: {snapshot['tool_blocks']})",
+            f"Average API latency: {snapshot['average_api_latency_ms'] if snapshot['average_api_latency_ms'] is not None else 'n/a'} ms",
+            f"Average tool latency: {snapshot['average_tool_latency_ms'] if snapshot['average_tool_latency_ms'] is not None else 'n/a'} ms",
             f"Average estimated input: {snapshot['average_input_tokens'] if snapshot['average_input_tokens'] is not None else 'n/a'} tokens",
             f"Maximum estimated input: {snapshot['max_input_tokens']} tokens",
             f"Response anomaly counts: {json.dumps(snapshot['response_anomalies'], sort_keys=True)}",
@@ -159,7 +160,9 @@ def register(ctx: Any) -> None:
     def api_request_error(error: Any = None, error_type: Any = None, **kwargs: Any) -> None:
         del kwargs
         name = error_type
-        if not name and error is not None:
+        if not name and isinstance(error, dict):
+            name = error.get("type") or "unknown"
+        elif not name and error is not None:
             name = type(error).__name__
         monitor.api_request_failed(error_type=name)
 
