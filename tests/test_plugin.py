@@ -82,7 +82,7 @@ class PluginTests(unittest.TestCase):
         self.ctx.hooks["api_request_error"](error_type="TimeoutError", error_message="private text")
         report = self.ctx.commands["reliability"]("")
         self.assertIn("LLM requests: 1 (success: 1, errors: 1)", report)
-        self.assertIn("250.0 ms", report)
+        self.assertIn("Average API latency: 250.0 ms", report)
         self.assertNotIn("private text", report)
 
 
