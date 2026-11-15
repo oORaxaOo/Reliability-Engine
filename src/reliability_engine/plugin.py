@@ -9,6 +9,7 @@ from typing import Any
 
 from .inspection import inspect_response
 from .monitor import ReliabilityMonitor
+from .profiler import ModelBehaviorProfiler, TASK_CATEGORIES, TASK_OUTCOMES
 from .validation import ToolCallValidator, ValidationLimits
 
 logger = logging.getLogger("reliability_engine")
@@ -81,24 +82,78 @@ def _bounded_int(ctx: Any, key: str, default: int, minimum: int, maximum: int) -
     return max(minimum, min(maximum, value))
 
 
-def _format_status(snapshot: dict[str, Any]) -> str:
+def _configured_model_label(ctx: Any) -> str:
+    try:
+        value = ctx.get_config("profile_model_label", "Gemma E4B Q4 Uncensored")
+    except Exception:
+        value = "Gemma E4B Q4 Uncensored"
+    if not isinstance(value, str) or not value.strip():
+        return "Gemma E4B Q4 Uncensored"
+    return " ".join(value.strip().split())[:80]
+
+
+def _format_status(snapshot: dict[str, Any], profiler_snapshot: dict[str, Any]) -> str:
+    model_turns = sum(profiler_snapshot["model_turns"].values())
     return "\n".join(
         [
             "RELIABILITY ENGINE STATUS",
             f"Uptime: {snapshot['uptime_seconds']} seconds",
             f"LLM requests: {snapshot['api_requests']} (success: {snapshot['api_successes']}, errors: {snapshot['api_errors']})",
+            f"Model turns observed: {model_turns} (not a task-success count)",
             f"Tool-call events: {snapshot['tool_calls']} (blocked by structural guard: {snapshot['tool_blocks']})",
             f"Average API latency: {snapshot['average_api_latency_ms'] if snapshot['average_api_latency_ms'] is not None else 'n/a'} ms",
             f"Average tool latency: {snapshot['average_tool_latency_ms'] if snapshot['average_tool_latency_ms'] is not None else 'n/a'} ms",
             f"Average estimated input: {snapshot['average_input_tokens'] if snapshot['average_input_tokens'] is not None else 'n/a'} tokens",
             f"Maximum estimated input: {snapshot['max_input_tokens']} tokens",
             f"Context pressure: {snapshot['context_pressure']} (budget: {snapshot['context_budget_tokens'] or 'not configured'} tokens)",
-            f"Context warning/critical events: {snapshot['context_warning_events']}/{snapshot['context_critical_events']}",
+            f"Context warning/critical transitions: {snapshot['context_warning_events']}/{snapshot['context_critical_events']}",
             f"Response anomaly counts: {json.dumps(snapshot['response_anomalies'], sort_keys=True)}",
             "Captured prompts, model responses, and tool arguments: no",
             "Metrics are volatile and reset when the Hermes plugin process restarts.",
+            "Use /reliability profile for the behavior profile; /reliability label <category> <outcome> to add an explicit task rating.",
         ]
     )
+
+
+def _format_profile(snapshot: dict[str, Any]) -> str:
+    lines = [
+        "MODEL BEHAVIOR PROFILE",
+        "Passive, content-free aggregate counters. No automatic alerts or task-success guesses.",
+        "",
+        "Model turns (generation events, not completed tasks):",
+    ]
+    if snapshot["model_turns"]:
+        lines.extend(f"- {model}: {count}" for model, count in snapshot["model_turns"].items())
+    else:
+        lines.append("- No model turns observed yet")
+
+    lines.extend(["", "Technical signals (allowlisted):"])
+    if snapshot["signals_by_model"]:
+        for model, signals in snapshot["signals_by_model"].items():
+            lines.append(f"- {model}: {json.dumps(signals, sort_keys=True)}")
+    else:
+        lines.append("- No technical signals observed")
+
+    lines.extend(["", "Explicit user-labelled task outcomes:"])
+    if snapshot["task_outcomes_by_model"]:
+        for model, categories in snapshot["task_outcomes_by_model"].items():
+            lines.append(f"- {model}:")
+            for category, outcomes in categories.items():
+                lines.append(f"  - {category}: {json.dumps(outcomes, sort_keys=True)}")
+    else:
+        lines.append("- No task outcomes labelled yet")
+
+    lines.extend(
+        [
+            "",
+            f"User task labels: {snapshot['user_task_labels']}",
+            "Automatic task-outcome inference: no",
+            "Profanity/style moderation or uncensored-language scoring: none",
+            "Captured prompt/response/tool content: no",
+            f"Retention: {snapshot['retention']}",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def register(ctx: Any) -> None:
@@ -111,10 +166,12 @@ def register(ctx: Any) -> None:
     )
     max_invalid_calls = _bounded_int(ctx, "max_invalid_tool_calls", 3, 1, 10)
     max_response_chars = _bounded_int(ctx, "max_response_chars", 100_000, 1_000, 1_000_000)
-    context_budget_tokens = _bounded_int(ctx, "context_budget_tokens", 0, 0, 1_000_000)
+    context_budget_tokens = _bounded_int(ctx, "context_budget_tokens", 65_536, 0, 1_000_000)
+    model_label = _configured_model_label(ctx)
 
     validator = ToolCallValidator(limits)
     monitor = ReliabilityMonitor(context_budget_tokens=context_budget_tokens or None)
+    profiler = ModelBehaviorProfiler(default_model_label=model_label)
     invalid_guard = _InvalidCallGuard(max_invalid_calls)
 
     def before_tool_call(
@@ -127,6 +184,7 @@ def register(ctx: Any) -> None:
             return None
         if invalid_guard.blocked(session_id, task_id):
             monitor.tool_call_blocked()
+            profiler.record_signal("invalid_tool_call")
             return {
                 "action": "block",
                 "message": (
@@ -137,6 +195,7 @@ def register(ctx: Any) -> None:
 
         count = invalid_guard.invalid(session_id, task_id)
         monitor.tool_call_blocked()
+        profiler.record_signal("invalid_tool_call")
         detail = result.summary or "Tool arguments failed structural validation."
         if count >= max_invalid_calls:
             detail = (
@@ -160,32 +219,39 @@ def register(ctx: Any) -> None:
         duration_ms = api_duration * 1000 if isinstance(api_duration, (int, float)) else None
         monitor.api_request_succeeded(duration_ms=duration_ms)
 
-    def api_request_error(error: Any = None, error_type: Any = None, **kwargs: Any) -> None:
-        del kwargs
+    def api_request_error(
+        error: Any = None, error_type: Any = None, **kwargs: Any
+    ) -> None:
         name = error_type
         if not name and isinstance(error, dict):
             name = error.get("type") or "unknown"
         elif not name and error is not None:
             name = type(error).__name__
         monitor.api_request_failed(error_type=name)
+        profiler.record_signal("provider_error", model_label=kwargs.get("model") or kwargs.get("model_name"))
 
     def after_auxiliary_call(api_duration: Any = None, error_type: Any = None, **kwargs: Any) -> None:
-        del kwargs
         if error_type:
             monitor.api_request_failed(error_type=error_type)
+            profiler.record_signal("provider_error", model_label=kwargs.get("model") or kwargs.get("model_name"))
         else:
             duration_ms = api_duration * 1000 if isinstance(api_duration, (int, float)) else None
             monitor.api_request_succeeded(duration_ms=duration_ms)
 
-    def after_llm_call(assistant_response: Any = None, session_id: str = "", **kwargs: Any) -> None:
-        model = str(kwargs.get("model", "unknown"))[:100]
+    def after_llm_call(
+        assistant_response: Any = None, session_id: str = "", **kwargs: Any
+    ) -> None:
+        observed_model = kwargs.get("model") or kwargs.get("model_name") or kwargs.get("model_id")
+        profiler.record_model_turn(observed_model)
         inspection = inspect_response(assistant_response, max_chars=max_response_chars)
         if inspection.anomaly_codes:
             monitor.response_inspected(inspection.anomaly_codes)
+            for code in inspection.anomaly_codes:
+                profiler.record_signal(code, model_label=observed_model)
             logger.warning(
                 "Response anomaly detected: codes=%s model=%s",
                 ",".join(inspection.anomaly_codes),
-                model,
+                str(observed_model or model_label)[:80],
             )
         invalid_guard.finish(session_id)
 
@@ -213,11 +279,31 @@ def register(ctx: Any) -> None:
         logger.warning("Could not register the optional reliability prompt section: %s", type(exc).__name__)
 
     def reliability_command(raw_args: str = "") -> str:
-        del raw_args
-        return _format_status(monitor.snapshot())
+        parts = raw_args.strip().lower().split() if isinstance(raw_args, str) else []
+        if not parts or parts[0] == "status":
+            return _format_status(monitor.snapshot(), profiler.snapshot())
+        if parts[0] == "profile":
+            return _format_profile(profiler.snapshot())
+        if parts[0] == "label":
+            if len(parts) != 3:
+                return (
+                    "Usage: /reliability label <category> <outcome>\n"
+                    f"Categories: {', '.join(sorted(TASK_CATEGORIES))}\n"
+                    f"Outcomes: {', '.join(sorted(TASK_OUTCOMES))}"
+                )
+            category = parts[1].replace("-", "_")
+            try:
+                profiler.record_task_outcome(category, parts[2])
+            except ValueError as exc:
+                return (
+                    f"{exc}\nCategories: {', '.join(sorted(TASK_CATEGORIES))}\n"
+                    f"Outcomes: {', '.join(sorted(TASK_OUTCOMES))}"
+                )
+            return f"Recorded explicit task label: {category} = {parts[2]} for {model_label}."
+        return "Usage: /reliability [status|profile|label <category> <outcome>]"
 
     ctx.register_command(
         "reliability",
         reliability_command,
-        description="Show Reliability Engine health and aggregate runtime metrics.",
+        description="Show runtime reliability metrics and a passive model behavior profile.",
     )
