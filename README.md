@@ -2,7 +2,7 @@
 
 **Deterministic safeguards and privacy-conscious monitoring for small-LLM agent runtimes.**
 
-Reliability Engine is a model-independent support layer for Hermes Agent and similar tool-using assistants. It detects and contains selected mechanical failure modes without calling another LLM for every check.
+Reliability Engine is a model-independent support layer for Hermes Agent and similar tool-using assistants. The current deployment target is **Gemma E4B Q4**; thresholds remain model-agnostic and context pressure stays disabled until the actual configured context budget is confirmed. It detects and contains selected mechanical failure modes without calling another LLM for every check.
 
 Its first release focuses on structural tool-call validation, bounded recovery from repeated malformed calls, response-anomaly telemetry, and runtime metrics. It does not claim to prove that natural-language answers are true.
 
@@ -35,6 +35,7 @@ It does not replace Hermes' memory provider, context engine, model provider, ret
 - Main and auxiliary provider requests are counted. Latencies for provider calls and tool-call events are measured separately.
 - A short system-prompt section nudges the model to avoid guessing and to wait for tool confirmation before claiming an action succeeded.
 - `/reliability` reports aggregate process-local metrics.
+- Optional context-pressure telemetry classifies estimated input size as normal, warning (75%), or critical (90%) against an explicitly configured context budget. It is disabled by default and never modifies context.
 
 ## Privacy
 
@@ -63,6 +64,7 @@ plugins:
         max_tool_string_chars: 16384
         max_invalid_tool_calls: 3
         max_response_chars: 100000
+        context_budget_tokens: 0
 ```
 
 Do not replace the rest of your Hermes configuration. The plugin requires Hermes Agent v0.23.1 or newer.

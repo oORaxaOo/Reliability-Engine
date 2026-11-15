@@ -52,7 +52,7 @@ The inspector flags only mechanical patterns: non-text/empty result, excessive l
 
 ### Runtime monitor
 
-The monitor stores only aggregate counters and bounded rolling samples for API latency and estimated input size. It deliberately discards prompt text, model output, tool arguments, tool results, and raw error messages.
+The monitor stores only aggregate counters and bounded rolling samples for API latency and estimated input size. If an operator explicitly configures the effective context budget, it classifies the latest estimated input size as normal, warning (75%), or critical (90%). This is telemetry, not an exact measurement or context manager. It deliberately discards prompt text, model output, tool arguments, tool results, and raw error messages.
 
 ### Hermes plugin adapter
 
@@ -69,3 +69,7 @@ Replacing Hermes' context engine would be invasive and may conflict with install
 ## Evidence Engine boundary
 
 Evidence Engine remains the system of record for software task contracts and verification. Reliability Engine may eventually consume a read-only verification report, but it must not write evidence, define coding success criteria, run builds/tests, or alter an Evidence Engine result.
+
+## Current model target: Gemma E4B Q4
+
+The current target model label supplied by the operator is **Gemma E4B Q4**. The plugin does not assume a particular Gemma generation, provider wrapper, quantization implementation, or context limit from that label. The context budget remains disabled until the exact model variant and effective Hermes provider context setting are confirmed. Tool validation and runtime telemetry remain model-independent.

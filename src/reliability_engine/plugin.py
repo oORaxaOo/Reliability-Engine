@@ -92,6 +92,8 @@ def _format_status(snapshot: dict[str, Any]) -> str:
             f"Average tool latency: {snapshot['average_tool_latency_ms'] if snapshot['average_tool_latency_ms'] is not None else 'n/a'} ms",
             f"Average estimated input: {snapshot['average_input_tokens'] if snapshot['average_input_tokens'] is not None else 'n/a'} tokens",
             f"Maximum estimated input: {snapshot['max_input_tokens']} tokens",
+            f"Context pressure: {snapshot['context_pressure']} (budget: {snapshot['context_budget_tokens'] or 'not configured'} tokens)",
+            f"Context warning/critical events: {snapshot['context_warning_events']}/{snapshot['context_critical_events']}",
             f"Response anomaly counts: {json.dumps(snapshot['response_anomalies'], sort_keys=True)}",
             "Captured prompts, model responses, and tool arguments: no",
             "Metrics are volatile and reset when the Hermes plugin process restarts.",
@@ -109,9 +111,10 @@ def register(ctx: Any) -> None:
     )
     max_invalid_calls = _bounded_int(ctx, "max_invalid_tool_calls", 3, 1, 10)
     max_response_chars = _bounded_int(ctx, "max_response_chars", 100_000, 1_000, 1_000_000)
+    context_budget_tokens = _bounded_int(ctx, "context_budget_tokens", 0, 0, 1_000_000)
 
     validator = ToolCallValidator(limits)
-    monitor = ReliabilityMonitor()
+    monitor = ReliabilityMonitor(context_budget_tokens=context_budget_tokens or None)
     invalid_guard = _InvalidCallGuard(max_invalid_calls)
 
     def before_tool_call(
