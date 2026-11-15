@@ -4,6 +4,31 @@ from reliability_engine.monitor import ReliabilityMonitor
 
 
 class ReliabilityMonitorTests(unittest.TestCase):
+    def test_context_pressure_is_disabled_without_an_explicit_budget(self):
+        monitor = ReliabilityMonitor()
+        monitor.api_request_started(approx_input_tokens=10_000)
+        snapshot = monitor.snapshot()
+        self.assertEqual(snapshot["context_budget_tokens"], None)
+        self.assertEqual(snapshot["context_pressure"], "disabled")
+
+    def test_context_pressure_warns_and_escalates_against_configured_budget(self):
+        monitor = ReliabilityMonitor(context_budget_tokens=10_000)
+        monitor.api_request_started(approx_input_tokens=7_500)
+        monitor.api_request_started(approx_input_tokens=9_000)
+        snapshot = monitor.snapshot()
+        self.assertEqual(snapshot["context_pressure"], "critical")
+        self.assertEqual(snapshot["context_warning_events"], 1)
+        self.assertEqual(snapshot["context_critical_events"], 1)
+        self.assertEqual(snapshot["max_context_utilization"], 0.9)
+
+    def test_context_metrics_ignore_invalid_token_estimates(self):
+        monitor = ReliabilityMonitor(context_budget_tokens=10_000)
+        monitor.api_request_started(approx_input_tokens=-1)
+        monitor.api_request_started(approx_input_tokens=True)
+        snapshot = monitor.snapshot()
+        self.assertEqual(snapshot["context_pressure"], "disabled")
+        self.assertEqual(snapshot["context_warning_events"], 0)
+
     def test_aggregates_metrics_without_content(self):
         monitor = ReliabilityMonitor()
         monitor.api_request_started(approx_input_tokens=123)
