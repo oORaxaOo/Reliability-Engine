@@ -10,7 +10,7 @@ from typing import Any
 
 
 class ReliabilityMonitor:
-    def __init__(self, *, sample_limit: int = 100) -> None:
+    def __init__(self, *, sample_limit: int = 100, context_budget_tokens: int | None = None) -> None:
         self._lock = threading.RLock()
         self._started = time.monotonic()
         self._api_requests = 0
@@ -25,6 +25,17 @@ class ReliabilityMonitor:
         self._tool_latencies: deque[float] = deque(maxlen=sample_limit)
         self._input_token_estimates: deque[int] = deque(maxlen=sample_limit)
         self._max_input_tokens = 0
+        self._context_budget_tokens = (
+            context_budget_tokens
+            if isinstance(context_budget_tokens, int)
+            and not isinstance(context_budget_tokens, bool)
+            and context_budget_tokens >= 1024
+            else None
+        )
+        self._context_warning_events = 0
+        self._context_critical_events = 0
+        self._max_context_utilization = 0.0
+        self._context_pressure = "disabled"
 
     def api_request_started(self, *, approx_input_tokens: Any = None) -> None:
         with self._lock:
@@ -36,6 +47,17 @@ class ReliabilityMonitor:
             ):
                 self._input_token_estimates.append(approx_input_tokens)
                 self._max_input_tokens = max(self._max_input_tokens, approx_input_tokens)
+                if self._context_budget_tokens:
+                    utilization = approx_input_tokens / self._context_budget_tokens
+                    self._max_context_utilization = max(self._max_context_utilization, utilization)
+                    if utilization >= 0.90:
+                        self._context_pressure = "critical"
+                        self._context_critical_events += 1
+                    elif utilization >= 0.75:
+                        self._context_pressure = "warning"
+                        self._context_warning_events += 1
+                    else:
+                        self._context_pressure = "normal"
 
     def api_request_succeeded(self, *, duration_ms: Any = None) -> None:
         with self._lock:
@@ -92,6 +114,11 @@ class ReliabilityMonitor:
                 "average_tool_latency_ms": round(fmean(tool_latencies), 1) if tool_latencies else None,
                 "average_input_tokens": round(fmean(token_samples), 1) if token_samples else None,
                 "max_input_tokens": self._max_input_tokens,
+                "context_budget_tokens": self._context_budget_tokens,
+                "context_pressure": self._context_pressure,
+                "context_warning_events": self._context_warning_events,
+                "context_critical_events": self._context_critical_events,
+                "max_context_utilization": round(self._max_context_utilization, 4),
                 "metrics_retention": "in-memory; reset when the plugin process restarts",
                 "content_capture": False,
             }
