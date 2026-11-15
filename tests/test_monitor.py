@@ -21,6 +21,20 @@ class ReliabilityMonitorTests(unittest.TestCase):
         self.assertEqual(snapshot["context_critical_events"], 1)
         self.assertEqual(snapshot["max_context_utilization"], 0.9)
 
+    def test_context_pressure_counts_transitions_not_repeated_requests(self):
+        monitor = ReliabilityMonitor(context_budget_tokens=10_000)
+        monitor.api_request_started(approx_input_tokens=9_000)
+        monitor.api_request_started(approx_input_tokens=9_200)
+        monitor.api_request_started(approx_input_tokens=9_500)
+        self.assertEqual(monitor.snapshot()["context_critical_events"], 1)
+
+        monitor.api_request_started(approx_input_tokens=7_500)
+        monitor.api_request_started(approx_input_tokens=7_800)
+        self.assertEqual(monitor.snapshot()["context_warning_events"], 1)
+
+        monitor.api_request_started(approx_input_tokens=9_100)
+        self.assertEqual(monitor.snapshot()["context_critical_events"], 2)
+
     def test_context_metrics_ignore_invalid_token_estimates(self):
         monitor = ReliabilityMonitor(context_budget_tokens=10_000)
         monitor.api_request_started(approx_input_tokens=-1)
