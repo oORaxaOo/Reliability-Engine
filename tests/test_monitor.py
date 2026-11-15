@@ -9,7 +9,15 @@ class ReliabilityMonitorTests(unittest.TestCase):
         monitor.api_request_started(approx_input_tokens=10_000)
         snapshot = monitor.snapshot()
         self.assertEqual(snapshot["context_budget_tokens"], None)
-        self.assertEqual(snapshot["context_pressure"], "disabled")
+        self.assertEqual(snapshot["context_pressure"], "waiting")
+
+    def test_configured_context_pressure_waits_for_first_valid_sample(self):
+        monitor = ReliabilityMonitor(context_budget_tokens=65_536)
+        self.assertEqual(monitor.snapshot()["context_pressure"], "waiting")
+        monitor.api_request_started(approx_input_tokens=True)
+        self.assertEqual(monitor.snapshot()["context_pressure"], "waiting")
+        monitor.api_request_started(approx_input_tokens=10_000)
+        self.assertEqual(monitor.snapshot()["context_pressure"], "normal")
 
     def test_context_pressure_warns_and_escalates_against_configured_budget(self):
         monitor = ReliabilityMonitor(context_budget_tokens=10_000)
