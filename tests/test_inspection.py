@@ -20,6 +20,10 @@ class ResponseInspectionTests(unittest.TestCase):
     def test_non_text_is_flagged(self):
         self.assertIn("response_not_text", inspect_response(None).anomaly_codes)
 
+    def test_uncensored_or_blunt_style_is_not_an_anomaly(self):
+        text = "An uncensored answer can use blunt wording without being a technical failure."
+        self.assertTrue(inspect_response(text).clean)
+
 
 if __name__ == "__main__":
     unittest.main()
