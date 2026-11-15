@@ -69,7 +69,7 @@ class PluginTests(unittest.TestCase):
         report = self.ctx.commands["reliability"]("")
         self.assertIn("RELIABILITY ENGINE STATUS", report)
         self.assertIn("Captured prompts, model responses, and tool arguments: no", report)
-        self.assertIn("65,536 tokens", report)
+        self.assertIn("budget: 65536 tokens", report)
 
     def test_profiler_does_not_flag_uncensored_or_blunt_style(self):
         self.ctx.hooks["post_llm_call"](
