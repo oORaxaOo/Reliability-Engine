@@ -26,6 +26,13 @@ plugins:
         max_tool_string_chars: 16384
         max_invalid_tool_calls: 3
         max_response_chars: 100000
+        context_budget_tokens: 0
 ```
 
 Preserve all unrelated existing keys in `config.yaml`.
+
+| `context_budget_tokens` | 0 (disabled) | 0–1000000 | Explicit context-window budget used for pressure warnings; set only to the actual configured budget |
+
+Context pressure is measured against the explicitly configured budget: warning at 75%, critical at 90%. A value of `0` disables pressure classification. Hermes' input-token figure is an estimate, not a guarantee of exact model token usage. Reliability Engine never truncates, summarizes, or rewrites context.
+
+For the current target **Gemma E4B Q4**, leave this setting disabled until the exact model variant and effective context limit in the Hermes provider configuration have been confirmed. Do not infer the context budget from the quantization label.
