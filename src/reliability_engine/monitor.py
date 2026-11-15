@@ -35,7 +35,7 @@ class ReliabilityMonitor:
         self._context_warning_events = 0
         self._context_critical_events = 0
         self._max_context_utilization = 0.0
-        self._context_pressure = "disabled"
+        self._context_pressure = "waiting" if self._context_budget_tokens else "disabled"
 
     def api_request_started(self, *, approx_input_tokens: Any = None) -> None:
         with self._lock:
