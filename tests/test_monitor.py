@@ -11,6 +11,14 @@ class ReliabilityMonitorTests(unittest.TestCase):
         self.assertEqual(snapshot["context_budget_tokens"], None)
         self.assertEqual(snapshot["context_pressure"], "disabled")
 
+    def test_configured_context_pressure_waits_for_first_valid_sample(self):
+        monitor = ReliabilityMonitor(context_budget_tokens=65_536)
+        self.assertEqual(monitor.snapshot()["context_pressure"], "waiting")
+        monitor.api_request_started(approx_input_tokens=True)
+        self.assertEqual(monitor.snapshot()["context_pressure"], "waiting")
+        monitor.api_request_started(approx_input_tokens=10_000)
+        self.assertEqual(monitor.snapshot()["context_pressure"], "normal")
+
     def test_context_pressure_warns_and_escalates_against_configured_budget(self):
         monitor = ReliabilityMonitor(context_budget_tokens=10_000)
         monitor.api_request_started(approx_input_tokens=7_500)
@@ -21,12 +29,26 @@ class ReliabilityMonitorTests(unittest.TestCase):
         self.assertEqual(snapshot["context_critical_events"], 1)
         self.assertEqual(snapshot["max_context_utilization"], 0.9)
 
+    def test_context_pressure_counts_transitions_not_repeated_requests(self):
+        monitor = ReliabilityMonitor(context_budget_tokens=10_000)
+        monitor.api_request_started(approx_input_tokens=9_000)
+        monitor.api_request_started(approx_input_tokens=9_200)
+        monitor.api_request_started(approx_input_tokens=9_500)
+        self.assertEqual(monitor.snapshot()["context_critical_events"], 1)
+
+        monitor.api_request_started(approx_input_tokens=7_500)
+        monitor.api_request_started(approx_input_tokens=7_800)
+        self.assertEqual(monitor.snapshot()["context_warning_events"], 1)
+
+        monitor.api_request_started(approx_input_tokens=9_100)
+        self.assertEqual(monitor.snapshot()["context_critical_events"], 2)
+
     def test_context_metrics_ignore_invalid_token_estimates(self):
         monitor = ReliabilityMonitor(context_budget_tokens=10_000)
         monitor.api_request_started(approx_input_tokens=-1)
         monitor.api_request_started(approx_input_tokens=True)
         snapshot = monitor.snapshot()
-        self.assertEqual(snapshot["context_pressure"], "disabled")
+        self.assertEqual(snapshot["context_pressure"], "waiting")
         self.assertEqual(snapshot["context_warning_events"], 0)
 
     def test_aggregates_metrics_without_content(self):

@@ -43,12 +43,14 @@ class PluginTests(unittest.TestCase):
         )
         self.assertIsNone(result)
 
-    def test_invalid_tool_call_is_blocked(self):
+    def test_invalid_tool_call_is_blocked_and_profiled_as_technical_signal(self):
         result = self.ctx.hooks["pre_tool_call"](
             tool_name="terminal", args={"command": "bad\x00command"}, task_id="t1", session_id="s1"
         )
         self.assertEqual(result["action"], "block")
         self.assertIn("null character", result["message"])
+        profile = self.ctx.commands["reliability"]("profile")
+        self.assertIn('"invalid_tool_call": 1', profile)
 
     def test_repeated_invalid_calls_trigger_session_guard(self):
         callback = self.ctx.hooks["pre_tool_call"]
@@ -67,6 +69,33 @@ class PluginTests(unittest.TestCase):
         report = self.ctx.commands["reliability"]("")
         self.assertIn("RELIABILITY ENGINE STATUS", report)
         self.assertIn("Captured prompts, model responses, and tool arguments: no", report)
+        self.assertIn("budget: 65536 tokens", report)
+
+    def test_profiler_does_not_flag_uncensored_or_blunt_style(self):
+        self.ctx.hooks["post_llm_call"](
+            assistant_response="An uncensored answer can use blunt wording without being a technical failure.",
+            session_id="s4",
+            model="Gemma E4B Q4 Uncensored",
+        )
+        report = self.ctx.commands["reliability"]("profile")
+        self.assertIn("Gemma E4B Q4 Uncensored: 1", report)
+        self.assertIn("No technical signals observed", report)
+        self.assertIn("Profanity/style moderation or uncensored-language scoring: none", report)
+
+    def test_task_outcome_requires_an_explicit_command_label(self):
+        self.ctx.hooks["post_llm_call"](
+            assistant_response="Completed a research summary.", session_id="s5"
+        )
+        result = self.ctx.commands["reliability"]("label research success")
+        self.assertIn("Recorded explicit task label: research = success", result)
+        report = self.ctx.commands["reliability"]("profile")
+        self.assertIn('"success": 1', report)
+        self.assertIn("Automatic task-outcome inference: no", report)
+
+    def test_context_budget_defaults_to_configured_65k(self):
+        self.ctx.hooks["pre_api_request"](approx_input_tokens=60_000)
+        report = self.ctx.commands["reliability"]("")
+        self.assertIn("Context pressure: critical (budget: 65536 tokens)", report)
 
     def test_turn_completion_clears_invalid_call_guard(self):
         callback = self.ctx.hooks["pre_tool_call"]

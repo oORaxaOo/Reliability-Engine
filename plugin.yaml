@@ -1,6 +1,6 @@
 name: reliability-engine
 version: "0.1.0"
-description: Structural tool-call safeguards and privacy-conscious monitoring for Hermes Agent.
+description: Structural tool-call safeguards, passive model behavior profiling, and privacy-conscious runtime monitoring for Hermes Agent.
 requires_hermes: ">=0.23.1"
 provides_hooks:
   - pre_tool_call
@@ -33,4 +33,7 @@ config_schema:
     default: 100000
   context_budget_tokens:
     type: integer
-    default: 0
+    default: 65536
+  profile_model_label:
+    type: string
+    default: "Gemma E4B Q4 Uncensored"

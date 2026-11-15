@@ -35,7 +35,7 @@ class ReliabilityMonitor:
         self._context_warning_events = 0
         self._context_critical_events = 0
         self._max_context_utilization = 0.0
-        self._context_pressure = "disabled"
+        self._context_pressure = "waiting" if self._context_budget_tokens else "disabled"
 
     def api_request_started(self, *, approx_input_tokens: Any = None) -> None:
         with self._lock:
@@ -51,13 +51,19 @@ class ReliabilityMonitor:
                     utilization = approx_input_tokens / self._context_budget_tokens
                     self._max_context_utilization = max(self._max_context_utilization, utilization)
                     if utilization >= 0.90:
-                        self._context_pressure = "critical"
-                        self._context_critical_events += 1
+                        next_pressure = "critical"
                     elif utilization >= 0.75:
-                        self._context_pressure = "warning"
-                        self._context_warning_events += 1
+                        next_pressure = "warning"
                     else:
-                        self._context_pressure = "normal"
+                        next_pressure = "normal"
+
+                    # Count transitions, not every request spent in the same pressure band.
+                    if next_pressure != self._context_pressure:
+                        if next_pressure == "warning":
+                            self._context_warning_events += 1
+                        elif next_pressure == "critical":
+                            self._context_critical_events += 1
+                    self._context_pressure = next_pressure
 
     def api_request_succeeded(self, *, duration_ms: Any = None) -> None:
         with self._lock:
