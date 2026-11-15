@@ -33,7 +33,10 @@ Reliability Engine: pre_tool_call
 Tool result --> post_tool_call metadata only
    |
    v
-Final response --> post_llm_call anomaly inspection --> normal delivery
+Final response --> post_llm_call anomaly inspection + passive behavior counters
+   |
+   v
+/reliability profile (on-demand report; no automatic alerts)
 ```
 
 ## Components
@@ -48,15 +51,26 @@ A consecutive invalid-call counter is maintained per session. Once the configure
 
 ### Response inspector
 
-The inspector flags only mechanical patterns: non-text/empty result, excessive length, and repeated long lines. It does not rewrite responses, infer truth, or call another model.
+The inspector flags only mechanical patterns: non-text/empty result, excessive length, and repeated long lines. It does not rewrite responses, infer truth, scan profanity, judge opinions, score tone, or call another model.
 
 ### Runtime monitor
 
-The monitor stores only aggregate counters and bounded rolling samples for API latency and estimated input size. If an operator explicitly configures the effective context budget, it classifies the latest estimated input size as normal, warning (75%), or critical (90%). This is telemetry, not an exact measurement or context manager. It deliberately discards prompt text, model output, tool arguments, tool results, and raw error messages.
+The monitor stores only aggregate counters and bounded rolling samples for API latency and estimated input size. If an operator configures a context budget, it classifies the latest estimated input size as normal, warning (75%), or critical (90%). Event counters increment only when the pressure band changes, preventing repeated counts for every request in the same band. This is telemetry, not an exact measurement or context manager. It deliberately discards prompt text, model output, tool arguments, tool results, and raw error messages.
+
+### Model Behavior Profiler
+
+The profiler is a passive, in-memory counter layer. It records model-turn counts (not task-completion claims), a fixed allowlist of technical signals, and task outcomes explicitly labelled by the user. It does not classify natural-language content or infer task success. Categories and outcomes are enumerated to avoid free-text collection and unbounded cardinality.
+
+The configured model label **Gemma E4B Q4 Uncensored** is metadata only. The word “Uncensored”, profanity, blunt language, unusual opinions, and creative style do not create profiler signals. The profiler emits no automatic alerts and makes no additional model calls. Use:
+
+- `/reliability profile` to display the aggregate profile;
+- `/reliability label research success` to explicitly label a completed task.
+
+Supported task categories: `conversation`, `research`, `coding`, `file_ops`, `automation`, `tool_use`, `other`. Supported outcomes: `success`, `partial`, `failure`, `unverified`.
 
 ### Hermes plugin adapter
 
-`plugin.py` wires the reusable core to hooks available in Hermes Agent v0.23.1. The adapter is thin; validation and metrics can be tested without importing Hermes.
+`plugin.py` wires the reusable core to hooks available in Hermes Agent v0.23.1. The adapter is thin; validation, profiling, and metrics can be tested without importing Hermes.
 
 ## Why no custom LLM retry loop?
 
@@ -70,6 +84,6 @@ Replacing Hermes' context engine would be invasive and may conflict with install
 
 Evidence Engine remains the system of record for software task contracts and verification. Reliability Engine may eventually consume a read-only verification report, but it must not write evidence, define coding success criteria, run builds/tests, or alter an Evidence Engine result.
 
-## Current model target: Gemma E4B Q4
+## Current model and context target
 
-The current target model label supplied by the operator is **Gemma E4B Q4**. The plugin does not assume a particular Gemma generation, provider wrapper, quantization implementation, or context limit from that label. The context budget remains disabled until the exact model variant and effective Hermes provider context setting are confirmed. Tool validation and runtime telemetry remain model-independent.
+The operator-confirmed target label is **Gemma E4B Q4 Uncensored** with a **65,536-token configured context budget**. These are runtime configuration values, not a claim about a particular Gemma generation, backend implementation, or exact tokenization behavior. Hermes remains authoritative for the active provider and context engine.
