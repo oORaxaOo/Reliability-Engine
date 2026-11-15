@@ -10,6 +10,7 @@ Settings live under `plugins.entries.reliability-engine.settings` in Hermes' exi
 | `max_tool_string_chars` | 16384 | 256–262144 | Maximum individual string/key length |
 | `max_invalid_tool_calls` | 3 | 1–10 | Consecutive malformed calls before session-level blocking |
 | `max_response_chars` | 100000 | 1000–1000000 | Response length above which an anomaly is recorded |
+| `context_budget_tokens` | 0 (disabled) | 0–1000000 | Explicit context-window budget used for pressure warnings; set only to the actual configured budget |
 
 Invalid or out-of-range settings fall back to bounded defaults. Values are clamped to the documented range.
 
@@ -31,7 +32,6 @@ plugins:
 
 Preserve all unrelated existing keys in `config.yaml`.
 
-| `context_budget_tokens` | 0 (disabled) | 0–1000000 | Explicit context-window budget used for pressure warnings; set only to the actual configured budget |
 
 Context pressure is measured against the explicitly configured budget: warning at 75%, critical at 90%. A value of `0` disables pressure classification. Hermes' input-token figure is an estimate, not a guarantee of exact model token usage. Reliability Engine never truncates, summarizes, or rewrites context.
 
