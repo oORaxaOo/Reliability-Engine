@@ -2,9 +2,11 @@
 
 from .inspection import ResponseInspection, inspect_response
 from .monitor import ReliabilityMonitor
+from .profiler import ModelBehaviorProfiler
 from .validation import ToolCallValidator, ValidationIssue, ValidationLimits, ValidationResult
 
 __all__ = [
+    "ModelBehaviorProfiler",
     "ResponseInspection",
     "ReliabilityMonitor",
     "ToolCallValidator",
