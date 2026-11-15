@@ -106,6 +106,7 @@ def _format_status(snapshot: dict[str, Any], profiler_snapshot: dict[str, Any]) 
             f"Average estimated input: {snapshot['average_input_tokens'] if snapshot['average_input_tokens'] is not None else 'n/a'} tokens",
             f"Maximum estimated input: {snapshot['max_input_tokens']} tokens",
             f"Context pressure: {snapshot['context_pressure']} (budget: {snapshot['context_budget_tokens'] or 'not configured'} tokens)",
+            f"Maximum observed context utilization: {snapshot['max_context_utilization'] * 100:.1f}%",
             f"Context warning/critical transitions: {snapshot['context_warning_events']}/{snapshot['context_critical_events']}",
             f"Response anomaly counts: {json.dumps(snapshot['response_anomalies'], sort_keys=True)}",
             "Captured prompts, model responses, and tool arguments: no",
