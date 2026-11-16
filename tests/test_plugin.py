@@ -71,7 +71,8 @@ class PluginTests(unittest.TestCase):
     def test_relative_kie_path_does_not_enable_publisher(self):
         ctx = FakeContext({"kie_database": "relative/kie.sqlite3"})
         register(ctx)
-        self.assertNotIn("on_session_end", ctx.hooks)
+        self.assertIn("on_session_end", ctx.hooks)
+        ctx.hooks["on_session_end"](session_id="s-no-kie")
 
     def test_registers_expected_hermes_hooks_and_status_command(self):
         self.assertIn("pre_tool_call", self.ctx.hooks)

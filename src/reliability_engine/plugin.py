@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from pathlib import Path
 from typing import Any
 
 from .inspection import inspect_response
@@ -157,8 +158,35 @@ def _format_profile(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+
+def _configured_kie_publisher(ctx: Any):
+    getter = getattr(ctx, "get_config", None)
+    if not callable(getter):
+        return None
+    try:
+        database = getter("kie_database", "")
+    except Exception:
+        return None
+    if not isinstance(database, str) or not database.strip():
+        return None
+    if not Path(database).expanduser().is_absolute():
+        logger.warning("Reliability KIE publication disabled: kie_database must be an absolute path")
+        return None
+    try:
+        from kie.publisher import publish_reliability_snapshot
+    except ImportError:
+        logger.warning("Reliability KIE publication disabled: KIE publisher is not installed")
+        return None
+
+    def publish(monitor_snapshot: dict[str, Any], profiler_snapshot: dict[str, Any]):
+        return publish_reliability_snapshot(database, monitor_snapshot, profiler_snapshot)
+
+    return publish
+
+
 def register(ctx: Any) -> None:
     """Register reliability monitoring and a conservative structural tool-call guard."""
+    kie_publisher = _configured_kie_publisher(ctx)
     limits = ValidationLimits(
         max_args_bytes=_bounded_int(ctx, "max_tool_args_bytes", 32_768, 1_024, 1_048_576),
         max_depth=_bounded_int(ctx, "max_tool_depth", 12, 2, 32),
@@ -259,6 +287,12 @@ def register(ctx: Any) -> None:
     def on_session_end(session_id: str = "", **kwargs: Any) -> None:
         del kwargs
         invalid_guard.finish(session_id)
+        if kie_publisher is not None:
+            try:
+                # Only aggregate counters are exported; session IDs and content never leave this plugin.
+                kie_publisher(monitor.snapshot(), profiler.snapshot())
+            except Exception as exc:
+                logger.warning("Reliability KIE snapshot publication unavailable (%s)", type(exc).__name__)
 
     ctx.register_hook("pre_tool_call", before_tool_call)
     ctx.register_hook("post_tool_call", after_tool_call)
