@@ -1,14 +1,17 @@
 import unittest
+from unittest.mock import Mock, patch
+import sys
+import types
 
 from reliability_engine.plugin import register
 
 
 class FakeContext:
-    def __init__(self):
+    def __init__(self, settings=None):
         self.hooks = {}
         self.commands = {}
         self.prompt_sections = {}
-        self.settings = {}
+        self.settings = settings or {}
 
     def get_config(self, key, default=None):
         return self.settings.get(key, default)
@@ -27,6 +30,48 @@ class PluginTests(unittest.TestCase):
     def setUp(self):
         self.ctx = FakeContext()
         register(self.ctx)
+
+    def test_publishes_aggregate_snapshot_to_kie_at_session_end(self):
+        publisher = Mock()
+        fake_kie = types.ModuleType("kie")
+        fake_kie.__path__ = []
+        fake_publisher_module = types.ModuleType("kie.publisher")
+        fake_publisher_module.publish_reliability_snapshot = publisher
+        with patch.dict(sys.modules, {"kie": fake_kie, "kie.publisher": fake_publisher_module}):
+            ctx = FakeContext({"kie_database": "/tmp/kie-reliability-test.sqlite3"})
+            register(ctx)
+            ctx.hooks["pre_api_request"](approx_input_tokens=1234)
+            ctx.hooks["post_api_request"](api_duration=0.1)
+            ctx.hooks["post_llm_call"](assistant_response="Private response text", session_id="private-session")
+            ctx.hooks["on_session_end"](session_id="private-session")
+
+        publisher.assert_called_once()
+        args, kwargs = publisher.call_args
+        self.assertEqual(args[0], "/tmp/kie-reliability-test.sqlite3")
+        self.assertEqual(args[1]["api_requests"], 1)
+        self.assertEqual(args[1]["api_successes"], 1)
+        self.assertEqual(args[1]["max_input_tokens"], 1234)
+        self.assertEqual(args[2]["model_turns"], {})
+        serialized = repr(args[1:]) + repr(kwargs)
+        self.assertNotIn("Private response text", serialized)
+        self.assertNotIn("private-session", serialized)
+
+    def test_kie_publication_failure_does_not_break_session_end(self):
+        publisher = Mock(side_effect=OSError("database unavailable"))
+        fake_kie = types.ModuleType("kie")
+        fake_kie.__path__ = []
+        fake_publisher_module = types.ModuleType("kie.publisher")
+        fake_publisher_module.publish_reliability_snapshot = publisher
+        with patch.dict(sys.modules, {"kie": fake_kie, "kie.publisher": fake_publisher_module}):
+            ctx = FakeContext({"kie_database": "/tmp/kie-reliability-test.sqlite3"})
+            register(ctx)
+            ctx.hooks["on_session_end"](session_id="s-safe")
+        publisher.assert_called_once()
+
+    def test_relative_kie_path_does_not_enable_publisher(self):
+        ctx = FakeContext({"kie_database": "relative/kie.sqlite3"})
+        register(ctx)
+        self.assertNotIn("on_session_end", ctx.hooks)
 
     def test_registers_expected_hermes_hooks_and_status_command(self):
         self.assertIn("pre_tool_call", self.ctx.hooks)
