@@ -87,3 +87,8 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
 See [architecture](docs/architecture.md), [configuration](docs/configuration.md), and [security](docs/security.md).
+
+
+## KIE event integration
+
+Reliability Engine can optionally publish content-free operational observations and an aggregate runtime snapshot to KIE. Set `kie_event_socket` to the same absolute Unix-socket path configured in KIE. Published data is limited to allowlisted anomaly codes, event counts, aggregate API/tool counters, and the context-pressure band. Prompts, responses, tool names, arguments/results, exception text, model labels, and task details are excluded. The publisher is disabled without a socket and fails open if KIE is unavailable.
