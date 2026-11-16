@@ -37,3 +37,6 @@ config_schema:
   profile_model_label:
     type: string
     default: "Gemma E4B Q4 Uncensored"
+  kie_event_socket:
+    type: string
+    default: ""

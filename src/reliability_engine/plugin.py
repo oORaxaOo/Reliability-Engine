@@ -8,6 +8,7 @@ import threading
 from typing import Any
 
 from .inspection import inspect_response
+from .kie_events import publish_observation, publish_runtime_snapshot
 from .monitor import ReliabilityMonitor
 from .profiler import ModelBehaviorProfiler, TASK_CATEGORIES, TASK_OUTCOMES
 from .validation import ToolCallValidator, ValidationLimits
@@ -169,6 +170,10 @@ def register(ctx: Any) -> None:
     max_response_chars = _bounded_int(ctx, "max_response_chars", 100_000, 1_000, 1_000_000)
     context_budget_tokens = _bounded_int(ctx, "context_budget_tokens", 65_536, 0, 1_000_000)
     model_label = _configured_model_label(ctx)
+    try:
+        kie_event_socket = ctx.get_config("kie_event_socket", None)
+    except Exception:
+        kie_event_socket = None
 
     validator = ToolCallValidator(limits)
     monitor = ReliabilityMonitor(context_budget_tokens=context_budget_tokens or None)
@@ -186,6 +191,7 @@ def register(ctx: Any) -> None:
         if invalid_guard.blocked(session_id, task_id):
             monitor.tool_call_blocked()
             profiler.record_signal("invalid_tool_call")
+            publish_observation(kie_event_socket, kind="tool_call_blocked")
             return {
                 "action": "block",
                 "message": (
@@ -197,6 +203,7 @@ def register(ctx: Any) -> None:
         count = invalid_guard.invalid(session_id, task_id)
         monitor.tool_call_blocked()
         profiler.record_signal("invalid_tool_call")
+        publish_observation(kie_event_socket, kind="tool_call_blocked")
         detail = result.summary or "Tool arguments failed structural validation."
         if count >= max_invalid_calls:
             detail = (
@@ -230,6 +237,7 @@ def register(ctx: Any) -> None:
             name = type(error).__name__
         monitor.api_request_failed(error_type=name)
         profiler.record_signal("provider_error", model_label=kwargs.get("model") or kwargs.get("model_name"))
+        publish_observation(kie_event_socket, kind="provider_error")
 
     def after_auxiliary_call(api_duration: Any = None, error_type: Any = None, **kwargs: Any) -> None:
         if error_type:
@@ -249,6 +257,11 @@ def register(ctx: Any) -> None:
             monitor.response_inspected(inspection.anomaly_codes)
             for code in inspection.anomaly_codes:
                 profiler.record_signal(code, model_label=observed_model)
+            publish_observation(
+                kie_event_socket,
+                kind="response_anomaly",
+                anomaly_codes=inspection.anomaly_codes,
+            )
             logger.warning(
                 "Response anomaly detected: codes=%s model=%s",
                 ",".join(inspection.anomaly_codes),
@@ -259,6 +272,7 @@ def register(ctx: Any) -> None:
     def on_session_end(session_id: str = "", **kwargs: Any) -> None:
         del kwargs
         invalid_guard.finish(session_id)
+        publish_runtime_snapshot(kie_event_socket, monitor.snapshot(), profiler.snapshot())
 
     ctx.register_hook("pre_tool_call", before_tool_call)
     ctx.register_hook("post_tool_call", after_tool_call)
