@@ -39,4 +39,4 @@ config_schema:
     default: "Gemma E4B Q4 Uncensored"
   kie_event_socket:
     type: string
-    default: ""
+    default: "~/.hermes/run/kie-engine-events.sock"
